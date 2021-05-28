@@ -1,0 +1,570 @@
+#!/bin/bash
+# __      __________  __      __                     __  .__
+#/  \    /  \_____  \/  \    /  \ ____  ____ _______/  |_|__| ____   ____
+#\   \/\/   //   |   \   \/\/   // ___\/ __ \\____ \   __\  |/  _ \ /    \
+# \        //    |    \        /\  \__\  ___/|  |_> >  | |  (  <_> )   |  \
+#  \__/\  / \_______  /\__/\  /  \___  >___  >   __/|__| |__|\____/|___|  /
+#       \/          \/      \/       \/    \/|__|                       \/ 
+# by eimernase
+# thanks to jwinterm, dsc_, martypete and everyone else from irc #wownero
+
+# Settings
+version="0.123456789"
+memeviewer="sxiv" 
+description_text="SuchWow contribution :-)"
+
+# Colors
+cyan='\033[0;36m'
+green='\033[1;32m'
+purple='\033[0;35m'
+red='\033[1;31m'
+white='\033[1;37m'
+yellow='\033[1;33m'
+NC='\033[0m'
+
+# Intermission
+function error_syntax() {
+	echo -n "Syntax error... Press Return"; read
+	errorflag=true
+}
+
+function error_download_list() {
+	echo -n "You need to download the address list first... Press Return"; read
+}
+
+function error_download_memes() {
+	echo -n "You need to download the memes first... Press Return"; read
+}
+
+function error_tightwad() {
+	echo -n "Tightwad! Press Return"; read
+}
+
+function error_autosend() {
+	echo -n "Tipping more than 15 addresses at once needs automatic sending enabled... Press Return"; read
+	errorflag=true
+}
+
+function loading_please_hodl() {
+	echo -n "Loading... Please hodl"
+	echo ""
+}
+
+function how_much_wow() {
+	echo -n "How much?: "
+	read tipamount
+	echo""
+	if [[ $tipamount =~ ^[+]?[0-9]+\.?[0-9]*$ && "$tipamount" != "0" ]]; then
+		if (( $(echo "$tipamount > 0.0" | bc -l) )); then
+			sleep 0.1
+		else
+			error_syntax
+		fi
+	else	
+		error_syntax
+	fi
+}
+
+function how_many_memes() {
+	echo -n "How many memes? [1-999]: "
+	read memeamount
+	echo ""
+	if [[ $memeamount =~ ^[+]?[0-9]+$ && "$memeamount" -gt "0" && "$memeamount" -le "999" ]]; then
+		if [[ "$autosend" == "false" && "$memeamount" -gt "15" && "$randomview" == "false" ]]; then
+			error_autosend
+		else
+			sleep 0.1
+		fi
+	else	
+		error_syntax
+	fi
+}
+
+function how_many_seconds() {
+	echo -n "Send after how many seconds? [1-999]: "
+	read time_tx
+	echo ""
+	if [[ $time_tx =~ ^[+]?[0-9]+$ && "$time_tx" -gt "0" && "$time_tx" -le "999" ]]; then
+		sleep 0.1
+	else	
+		error_syntax
+	fi
+}
+
+function how_many_seconds_check() {
+	echo -n "Check every how many seconds? [1-999]: "
+	read time_check
+	echo ""
+	if [[ $time_check =~ ^[+]?[0-9]+$ && "$time_check" -gt "0" && "$time_check" -le "999" ]]; then
+		sleep 0.1
+	else	
+		error_syntax
+	fi
+}
+
+function which_one() {
+	echo -n "Which one? [1-"$(cat lastnumberofmemes)"]: "
+	read onememe
+	echo ""
+	if [[ $onememe =~ ^[+]?[0-9]+$ && "$onememe" -gt "0" && "$onememe" -le "$(cat lastnumberofmemes)" ]]; then
+		sleep 0.1
+	else	
+		error_syntax
+	fi
+}
+
+# Leech all data from lza_menace :P
+function get_addresses() {
+	# Purge old addresses
+	if [ -f addresses ]; then
+		rm addresses
+	fi
+	
+	# Get total number of memes on suchwow.xyz
+	number_of_memes=$(elinks -dump -no-numbering https://suchwow.xyz | grep -E -A 1 'content=latest_tipped' | sed -e 's/^[ \t]*//' | tail -n 1) && number_of_memes=$(echo "${number_of_memes: -4}")	
+
+	# Get all wownero addresses from suchwow.xyz
+	for i in $(seq 1 $number_of_memes); do
+		elinks -dump -no-numbering https://suchwow.xyz/post/$i | grep -E -A 1 "Vote for this post by sending WOW to the following address:" | sed -e 's/^[ \t]*//' | tail -n 1 >> addresses
+	sleep 0.1
+	done
+
+	#number_of_memes_last=$number_of_memes # do it via file instead of variable to be persistent between sessions
+	echo "$number_of_memes" > lastnumberofmemes_addresses
+
+	# Sort and remove duplicates
+	cat addresses | sort | uniq > addresses_sort_uniq
+}
+
+function get_last_addresses() {
+	# Only if addresses were already downloaded
+	if [ -f addresses ]; then
+
+		# Get total number of memes on suchwow.xyz
+		number_of_memes=$(elinks -dump -no-numbering https://suchwow.xyz | grep -E -A 1 'content=latest_tipped' | sed -e 's/^[ \t]*//' | tail -n 1) && number_of_memes=$(echo "${number_of_memes: -4}")	
+		number_to_start=$(( $number_of_memes - $(cat lastnumberofmemes_addresses) ))
+		number_to_start=$(( $number_of_memes - $number_to_start ))
+
+		# Get all new wownero addresses from suchwow.xyz
+		if [[ $number_of_memes -gt $number_to_start ]]; then
+			for i in $(seq $number_to_start $number_of_memes); do
+				elinks -dump -no-numbering https://suchwow.xyz/post/$i | grep -E -A 1 "Vote for this post by sending WOW to the following address:" | sed -e 's/^[ \t]*//' | tail -n 1 >> addresses
+			sleep 0.1
+			done
+		fi
+
+		echo "$number_of_memes" > lastnumberofmemes_addresses
+		# Sort and remove duplicates
+		cat addresses | sort | uniq > addresses_sort_uniq
+	else
+		error_download_list
+	fi
+}
+
+function get_memes() {
+	# Purge old memes
+	if [ -d "memes" ]; then
+		rm -r memes
+	fi
+
+	# Create meme folder
+	mkdir memes
+	
+	# Get total number of memes on suchwow.xyz
+	number_of_memes=$(elinks -dump -no-numbering https://suchwow.xyz | grep -E -A 1 'content=latest_tipped' | sed -e 's/^[ \t]*//' | tail -n 1) && number_of_memes=$(echo "${number_of_memes: -4}")	
+
+	# Get meme name and download meme
+	for i in $(seq 1 $number_of_memes); do
+		w3m -dump_source https://suchwow.xyz/post/$i | grep -io 'https://suchwow.xyz.*[jpg|jpeg|gif|png]' | tail -n 1 | xargs wget -O memes/$i
+	done
+
+	#number_of_memes_last=$number_of_memes # do it via file instead of variable for persistency between sessions
+	echo "$number_of_memes" > lastnumberofmemes
+	get_stats
+}
+
+function get_last_memes() {
+	# Get total number of memes on suchwow.xyz
+	number_of_memes=$(elinks -dump -no-numbering https://suchwow.xyz | grep -E -A 1 'content=latest_tipped' | sed -e 's/^[ \t]*//' | tail -n 1) && number_of_memes=$(echo "${number_of_memes: -4}")	
+	number_to_start=$(( $number_of_memes - $(cat lastnumberofmemes) ))
+	number_to_start=$(( $number_of_memes - $number_to_start ))
+
+	#if [ $number_of_memes -gt $(cat lastnumberofmemes) ]; then
+	# Get meme name and download meme
+	if [[ $number_of_memes -gt $number_to_start ]]; then
+		for i in $(seq $number_to_start $number_of_memes); do
+			w3m -dump_source https://suchwow.xyz/post/$i | grep -io 'https://suchwow.xyz.*[jpg|jpeg|gif|png]' | tail -n 1 | xargs wget -O memes/$i
+		done
+	fi
+	echo "$number_of_memes" > lastnumberofmemes
+	get_stats	
+}
+
+function get_stats() {
+	if [[ $number_of_memes -gt $number_to_start ]]; then
+		echo "Meme download complete."
+	else
+		echo "No new memes available."
+	fi
+#	echo "Getting stats..."
+	
+	# Get number of memers
+#	elinks -dump -no-numbering https://suchwow.xyz/leaderboards/top_posters | tail -n +12 | sed '/Go Home/,$d' | head -n -3 > userbase
+#	memers=$(cat userbase | wc -l)
+	
+	# Get all WOW ever tipped
+#	cat userbase | sed -r 's/1e-11/0.00000000001/' | cut -c 52- | rev | cut -c 4- | rev | paste -sd+ | bc -l > tippedamount
+
+#	echo "Stats download complete."
+	echo "Getting addresses..."
+}
+
+# Tips
+function answer_tip() {
+	read tipanswer
+	echo""
+    	case $tipanswer in
+ 		y ) transfer_chunks
+		;;
+	        n ) error_tightwad
+		;;
+		* ) error_syntax
+	esac
+}
+
+function tip_all() {
+	if [ -f addresses ]; then
+		# Calculate tip amount
+		manyaddresses=$(cat addresses_sort_uniq | wc -l)
+		eachamount=$(echo "scale=11; "$tipamount/$manyaddresses"" | bc -l)
+
+		# Add tip amount to new addressfile
+		cp addresses_sort_uniq addresses_with_amount
+		sed -i s/$/", $eachamount"/ addresses_with_amount # add to end of each line
+
+		# Display tip amount
+		echo -n "That's "$eachamount" for everyone. Are you sure? (y/n): "
+		answer_tip
+	else
+		error_download_list
+	fi
+}
+
+function tip_latest() {
+	if [ -f addresses ]; then
+		cat addresses | uniq | tail -n $memeamount > addresses_uniq
+		# Calculate tip amount
+		manyaddresses=$(cat addresses_uniq | wc -l)
+		eachamount=$(echo "scale=11; "$tipamount/$manyaddresses"" | bc -l)
+
+		# Add tip amount to new addressfile
+		cp addresses_uniq addresses_with_amount
+		sed -i s/$/", $eachamount"/ addresses_with_amount # add to end of each line
+
+		# Display tip amount
+		echo -n "That's "$eachamount" for everyone. Are you sure? (y/n): "
+		answer_tip
+	else
+		error_download_list
+	fi
+}
+
+
+function tip_donate() {
+	# Add tip amount to new addressfile
+	echo "WW45jxyyxZpRLuKyAM7KfH21NK2W1RwqJSu9mwaQ49YYfCKf7EfAMoAi3sB47EFHTj393us29SffyLynCGEYpb5W2xRxDi3G9" > addresses_with_amount
+	sed -i s/$/", $tipamount"/ addresses_with_amount # add to end of line
+
+		# Display tip amount
+		echo -n "Donate "$tipamount" to WOWception. Are you sure? (y/n): "
+		answer_tip
+}
+
+function tip_one() {
+	# Get donation address from suchwow.xyz
+	elinks -dump -no-numbering https://suchwow.xyz/post/$onememe > sitedata && grep -E -A 1 "Vote for this post by sending WOW to the following address:" sitedata | sed -e 's/^[ \t]*//' | tail -n 1 > single_address
+	sleep 0.1
+	
+	if grep -q -E -A 1000000 "No WOW received yet" sitedata; then
+	       	totaltipamount="0.0"
+	else
+		totaltipamount=$(sed -i '/WOW Sent/,$d' sitedata && grep -E -A 1000000 "WOW Received" sitedata | sed -r 's/1e-11/0.00000000001/' | tail -n +3 | head -n -1 | sed -e 's/^[ \t]*//' | cut -c 6- | cut -d' ' -f1 | paste -sd+ | bc)
+       	fi
+	# Add tip amount to new addressfile
+	cp single_address addresses_with_amount
+	sed -i s/$/", $tipamount"/ addresses_with_amount # add to end of line
+
+		# Display tip amount
+		echo -n "That's "$tipamount" for the memer. Tips so far: "$totaltipamount". Are you sure? (y/n): "
+		answer_tip
+}
+
+function tip_random() {
+	if [ -f addresses ]; then
+		# Pick random addresses
+		cat addresses | sort | uniq | sort --random-sort | head -n $memeamount > random_addresses_sort_uniq
+
+		# Calculate tip amount
+		manyaddresses=$(cat random_addresses_sort_uniq | wc -l)
+		eachamount=$(echo "scale=11; "$tipamount/$manyaddresses"" | bc -l)
+
+		# Add tip amount to new addressfile
+		cp random_addresses_sort_uniq addresses_with_amount
+		sed -i s/$/", $eachamount"/ addresses_with_amount # add to end of each line
+
+		# Display tip amount
+		echo -n "That's "$eachamount" for everyone. Are you sure? (y/n): "
+		answer_tip
+	else
+		error_download_list
+
+	fi
+}
+
+function transfer_chunks() {
+	while  [ -s addresses_with_amount ]; do
+		# Check if only one address is left
+		if [[ $(cat addresses_with_amount | wc -l) = "1" ]]; then
+			single_transfer=true
+		fi
+
+		# Copy top 15 addresses
+		cat addresses_with_amount | head -n 15 | xclip -selection c
+		# Remove top 15 addresses from file
+		sed -i '1,15d' addresses_with_amount
+		operate_wowlet_transfer
+	done
+}
+
+function operate_wowlet_transfer() {
+	# Focus WOWlet wallet and insert addresses
+	xdotool mousemove --window $(xdotool search --name "WOWlet -") 200 35 click 1 mousemove --window $(xdotool search --name "WOWlet -") 200 80 click 1
+	xdotool key --repeat 10 shift+Tab key space # clear everything firest
+	xdotool mousemove --window $(xdotool search --name "WOWlet -") 200 35 click 1 mousemove --window $(xdotool search --name "WOWlet -") 200 80 click 1
+#	wmctrl -a WOWlet && sleep 0.1
+	xdotool key ctrl+v
+
+	# Fill in description
+	xdotool key --repeat 12 shift+Tab
+	echo "$description_text" | xclip -selection c
+	xdotool key ctrl+v
+	xdotool key --repeat 3 Tab
+	xdotool key space
+
+	if $autosend; then
+		
+		# One tx
+		if $single_transfer; then
+			# Send one
+			single_transfer=false
+			sleep $time_tx
+			xdotool key Tab
+			xdotool key space
+			sleep 1
+			xdotool key Return
+			wmctrl -a wowception
+	
+		# Pay to many
+		else
+			sleep $time_tx	
+			xdotool key --repeat 5 Tab
+			xdotool key space
+			sleep 1
+			xdotool key Return
+			wmctrl -a wowception
+		fi
+	fi
+}
+
+function view_newest() {
+	dircount=$(ls -1A memes | wc -l)
+	if [ $dircount -eq 0 ]; then
+		error_download_memes
+	else
+		rm memes/list; rm listnew; ls memes | sort -n > listnew && tac listnew > list && cp list memes/list && cd memes && $memeviewer -a -i < list & disown
+#		OLDDISPLAY=$DISPLAY && DISPLAY=':0' && rm memes/list; rm listnew; ls memes | sort -n > listnew && tac listnew > list && cp list memes/list && cd memes && $memeviewer -a -i < list & disown ; DISPLAY=$OLDDISPLAY
+#		rm memes/list; ls memes | sort -n > list && cd memes && $memeviewer -a -i < ../list ; cd ..
+	fi
+}
+
+function view_thumbnail() {
+	dircount=$(ls -1A memes | wc -l)
+	if [ $dircount -eq 0 ]; then
+		error_download_memes
+	else
+		rm memes/list; ls memes | sort -n > list && cp list memes/list && cd memes && $memeviewer -a -t -i < list & disown
+	fi
+}
+
+function view_one() {
+	dircount=$(ls -1A memes | wc -l)
+	if [ $dircount -eq 0 ]; then
+		error_download_memes
+	else	
+		$memeviewer -a memes/$onememe & disown
+#		rm memes/list; ls memes | sort -n > list && cp list memes/list && cd memes && $memeviewer -a -i < list -n $onememe ; cd ..
+	fi
+}
+
+function view_random() {
+	dircount=$(ls -1A memes | wc -l)
+        if [ $dircount -eq 0 ]; then
+                error_download_memes
+        else
+		rm memes/list; ls memes | sort -n > rawlist && cat rawlist | sort --random-sort | head -n $memeamount > list && cp list memes/list && cd memes && $memeviewer -S 5 -f -a -i < list & disown 
+	fi
+}
+
+function change_autosend() {
+	if $autosend; then
+		autosend=false
+	else	
+		how_many_seconds
+		if ! $errorflag; then autosend=true; fi
+	fi
+}
+
+function change_autocheck() {
+	if $autocheck; then
+		autocheck=false
+		pkill -9 memechecker
+	else	
+		how_many_seconds_check
+		if ! $errorflag; then
+		       	autocheck=true
+			./memechecker "$time_check" & disown
+		fi
+	fi
+}
+
+# Menu
+pkill -9 memechecker
+tipamount=
+selection=
+totaltipped=
+autosend=false
+autocheck=false
+randomview=false
+until [ "$selection" = "e" ]
+do	clear -x
+	errorflag=false
+  	echo '
+
+	 __      __________  __      __                     __  .__
+	/  \    /  \_____  \/  \    /  \ ____  ____ _______/  |_|__| ____   ____
+	\   \/\/   //   |   \   \/\/   // ___\/ __ \\____ \   __\  |/  _ \ /    \
+	 \        //    |    \        /\  \__\  ___/|  |_> >  | |  (  <_> )   |  \
+	  \__/\  / \_______  /\__/\  /  \___  >___  >   __/|__| |__|\____/|___|  /
+	       \/          \/      \/       \/    \/|__|                       \/' | lolcat 
+	echo -e "
+	${purple}. version${white} $version ${NC}"
+	echo -en "	${purple}. latest meme${white} "
+       	if [ -f lastnumberofmemes ]; then
+		cat lastnumberofmemes
+	else	
+		echo 'N/A'
+	fi
+#	echo -n "	. memers "
+#	if [ -f userbase ]; then
+#		cat userbase | wc -l
+#	else	
+#		echo 'N/A'
+#	fi
+#	echo -n "	. tipped "
+#	if [ -f tippedamount ]; then
+#		cat tippedamount | cut -c1-17
+#	else	
+#		echo 'N/A'
+#	fi
+	echo -e "
+	${white}g -${NC} (Re)Download all memes and donation addresses from suchwow.xyz (takes a while...)
+	${white}u -${NC} Update all memes and donation addresses since last download"
+	if $autocheck; then
+		echo -e "	${white}a -${NC} Autocheck for new memes every x seconds and display notification ${green}- ON ($time_check)${NC}"
+	else	
+		echo -e "	${white}a -${NC} Autocheck for new memes every x seconds and display notification ${red}- OFF${NC}"
+	fi
+	echo -e "
+	${white}v -${NC} View memes beginning with the newest (n and p to rifle through, f for fullscreen)
+	${white}x -${NC} View meme number x
+	${white}t -${NC} View memes in thumbnail mode
+	${white}r -${NC} View some random memes as a fullscreen slideshow
+	"
+	if $autosend; then
+		echo -e "	${white}s -${NC} Send automatically after x seconds ${green}- ON ($time_tx)${NC}"
+	else
+		echo -e "	${white}s -${NC} Send automatically after x seconds ${red}- OFF${NC}"
+	fi
+	echo -e "	${white}1 -${NC} Tip meme number x
+	${white}2 -${NC} Tip the x latest memes
+	${white}3 -${NC} Random tip a number of memes
+	${white}4 -${NC} Tip ALL memes (use with caution!)
+	${white}5 -${NC} Mock meme with 0.00000000001 WOW
+
+	${white}c -${NC} Call martypete tech support (better not) 
+	${yellow}d -${NC} Donate some WOW to WOWception
+	${white}e -${NC} Exit
+	"
+	echo -en "${white}Enter selection: "
+	read selection
+	echo ""
+	case $selection in
+		g ) loading_please_hodl
+		    get_memes
+		    get_addresses
+		;;
+		u ) loading_please_hodl
+		    get_last_memes
+		    get_last_addresses
+		;;
+		a ) change_autocheck
+		;;
+		1 ) if ! $errorflag; then which_one; fi
+		    if ! $errorflag; then how_much_wow; fi
+		    if ! $errorflag; then tip_one; fi
+		;;
+		2 ) if ! $errorflag; then how_many_memes; fi
+		    if ! $errorflag; then how_much_wow; fi
+		    if ! $errorflag; then tip_latest; fi
+		;;
+		3 ) if ! $errorflag; then how_many_memes; fi
+		    if ! $errorflag; then how_much_wow; fi
+		    if ! $errorflag; then tip_random; fi
+		;;
+		4 ) if $autosend; then
+			    if ! $errorflag; then how_much_wow; fi
+			    if ! $errorflag; then tip_all; fi
+		    else
+			    error_autosend
+		    fi
+		;;
+		5 ) tipamount=0.00000000001
+		    if ! $errorflag; then which_one; fi
+		    if ! $errorflag; then tip_one; fi
+		;;
+		s ) change_autosend
+		;;
+		v ) view_newest
+		;;
+		x ) if ! $errorflag; then which_one; fi
+		    if ! $errorflag; then view_one; fi
+		;;
+		t ) view_thumbnail
+		;;
+		r ) randomview=true
+		    if ! $errorflag; then how_many_memes; fi
+		    if ! $errorflag; then view_random; fi
+		;;
+            	c ) echo -en "Martypete fucks you up and deletes a few random files on your hard disk... Press Return"; read
+                ;;
+	        d ) if ! $errorflag; then how_much_wow; fi
+		    if ! $errorflag; then tip_donate; fi
+             	;;
+		e ) pkill -9 memechecker
+		    exit
+		;;
+		* ) error_syntax
+   		
+	esac
+done
+

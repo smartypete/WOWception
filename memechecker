@@ -1,0 +1,21 @@
+#!/bin/bash
+if [ -z $1 ]; then
+	echo "You need to pass a parameter, i.e. \"./memechecker 30\" to check for new memes every 30 seconds."
+else
+	if [ ! -f lastcheckedmemes ]; then
+		number_of_memes=$(elinks -dump -no-numbering https://suchwow.xyz | grep -E -A 1 'content=latest_tipped' | sed -e 's/^[ \t]*//' | tail -n 1) && number_of_memes=$(echo "${number_of_memes: -4}") 
+		echo "$number_of_memes" > lastcheckedmemes
+	fi
+
+	while :;
+	do
+		sleep $1
+		number_of_memes=$(elinks -dump -no-numbering https://suchwow.xyz | grep -E -A 1 'content=latest_tipped' | sed -e 's/^[ \t]*//' | tail -n 1) && number_of_memes=$(echo "${number_of_memes: -4}") 
+
+		if [[ $number_of_memes -gt $(cat lastcheckedmemes) ]]; then
+			zenity --info --title "suchwow.xyz" --text "New Memes!"
+			echo "$number_of_memes" > lastcheckedmemes
+			sleep 300
+		fi	
+	done
+fi
