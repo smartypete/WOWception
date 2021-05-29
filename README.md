@@ -10,7 +10,7 @@ Thumbnail mode (WOWALITY) in sxiv:
 # Installation on Debian/Ubuntu
 Get all the tools:
 ```
-sudo apt install xdotool sxiv wmctrl elinks w3m bc lolcat zenity git
+sudo apt install xdotool sxiv wmctrl elinks w3m bc lolcat zenity wget git
 git clone https://github.com/smartypete/WOWception.git
 ```
 Download WOWlet, follow instructions to create a wallet and leave it open.
